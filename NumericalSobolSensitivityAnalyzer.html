@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+
+<!--
+    This file is part of AVaN Pack.
+
+    AVaN Pack is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    AVaN Pack is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with AVaN Pack.  If not, see <https://www.gnu.org/licenses/>6.
+-->
+
+<html>
+    <head>
+        <title>Numerical Sobol Sensitivity Indices</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            table, td, th{
+                border: 1px green solid;
+            }
+            table{
+                border-collapse: collapse;
+            }
+            th{
+                background: #ccffcc;
+            }
+            tr:nth-child(even) {
+                background: #cccccc;
+            }
+            table{
+                width: 40%;
+            }
+        </style>
+
+        <script language="javascript" type="text/javascript">
+            /*
+             * This variable will be used to store the body element state for future page refreshment
+             */
+            var pagestate;
+
+            /*
+             * This function is used to compute the expected value of a function 
+             * by means of multiple integrations. Here we calculate the value of
+             * E[Y|xi], which means, the expected value of Y by fixing xi.
+             * 
+             * equation contains the analyzed equation;
+             * xi is the fixed value of E[Y|xi]
+             * X is an array with the parameters information
+             * delta_base is the base granularity of integrations
+             */
+            function nMinusXiAverageIntegration(equation, xi, X, delta_base) {
+
+                /*
+                 * To calculate the expected value of Y, we need to use the 
+                 * trapezoidal rule for integration multivariable equations. 
+                 *  Ex.:
+                 *  if we want to integrate the function f(x,y) for the 
+                 *  intervals xa,xb,ya,yb we need to use the following rule:
+                 *      (xb-xa)(yb-ya)(f(xa,ya)+f(xb,ya)+f(xa,yb)+f(xb,yb))/4
+                 *  
+                 *  if we want to integrate f(x,y,z) we need:
+                 *      (xb-xa)(yb-ya)(zb-za)(f(xa,ya,za)+f(xb,ya,za)+f(xa,yb,za)
+                 *      +f(xa,ya,zb)+f(xb,yb,za)+f(xb,ya,zb)+f(xa,yb,zb)+
+                 *      f(xb,yb,zb))/8
+                 *  
+                 */
+
+
+                /*
+                 * Array of each individual delta parameters.
+                 * Here, the delta variables will contain the granularity of
+                 * integrations
+                 */
+                var delta_X = new Array(X.length);
+                /*
+                 * Contains the individual increment for integrals
+                 */
+                var delta_inc_X = new Array(X.length);
+                /*
+                 * Used to compute the integrals
+                 */
+                var baseProduct = 1.0;
+                /*
+                 * Used to compute the expected value
+                 */
+                var aMinusbProd = 1.0;
+                /*
+                 * This variable will contain the javascript function used to 
+                 * execute the equation. We have defined this function as a 
+                 * string because we need that this function be as flexible as 
+                 * possible, since, this main function can compute the expected 
+                 * value of any equation. After defining the structure of 
+                 * _baseFun, we will use the javascript eval() function, to 
+                 * transform this string into a native function.
+                 */
+                var transBaseFun = "_baseFun = function (" + xi.param + ",";
+                /*
+                 * This variable will contain the base function.
+                 */
+                var _baseFun;
+
+                /*
+                 * In this loop, we initiate the main variables and define 
+                 * _baseFun function.
+                 */
+                for (var i = 0; i < X.length; i++) {
+                    delta_X[i] = delta_base * (X[i].max - X[i].min);
+                    delta_inc_X[i] = X[i].min;
+
+                    baseProduct *= delta_X[i];
+
+                    aMinusbProd *= X[i].max - X[i].min;
+
+                    transBaseFun = transBaseFun + X[i].param;
+
+                    /*
+                     * Here we put the variables as parameters of _baseFun. At the end of this
+                     * loop, the _baseFun function will have something like this:
+                     * function(xi,x1,x2,...,xn){return 'the equation';};
+                     */
+                    if (i == X.length - 1) {
+                        transBaseFun = transBaseFun + "){return " +
+                                equation + ";};";
+                    } else {
+                        transBaseFun = transBaseFun + ",";
+                    }
+
+                }
+
+                /*
+                 * _intFun will contain the function used in the integration 
+                 * process. It will use _baseFun and will assemble the trapezoidal 
+                 * format for any number of parameters. Delta_inc_X is an array 
+                 * that contains the partial values of parameters.
+                 */
+                var transIntFun = "_intFun = function(delta_inc_X){return _baseFun(" + xi.value + ",";
+                var _intFun;
+
+                /*
+                 * This loop will be used to assemble the sums of functions for 
+                 * the trapezoidal method
+                 */
+                for (var i = 0; i < Math.pow(2, X.length); i++) {
+
+                    for (var j = 0; j < X.length; j++) {
+
+                        transIntFun += "delta_inc_X[" + j + "]";
+
+                        /*
+                         * To make every combination necessary for the 
+                         * trapezoidal method, we use the binary representation.
+                         */
+                        if ((i & Math.pow(2, j)) != 0) {
+                            transIntFun += " + " + delta_X[j];
+                        }
+
+                        if (j == X.length - 1) {
+                            transIntFun += ") ";
+                        } else {
+                            transIntFun += ", ";
+                        }
+                    }
+
+                    if (i == Math.pow(2, X.length) - 1) {
+                        transIntFun += ";};"
+                    } else {
+                        transIntFun += "+ _baseFun(" + xi.value + ",";
+                    }
+
+                }
+
+                eval(transBaseFun);
+                eval(transIntFun);
+
+                var partialArea = 0.0;
+
+                /*
+                 * We use this single loop for compute the integrals instead of 
+                 * X.length loops. This structure 
+                 * emulates the normal process, which means that the number of 
+                 * iterations will be the same.
+                 */
+                for (var i = 0; i < Math.pow(1.0 / delta_base, X.length); i++) {
+
+                    partialArea += baseProduct * (_intFun(delta_inc_X) / Math.pow(2, X.length));
+
+                    delta_inc_X[0] = (delta_inc_X[0] + delta_X[0]);
+
+                    /*
+                     * The structure bellow starts the chain of updates process. 
+                     * Always that delta_inc_X[i] reaches the maximum value, 
+                     * its value is reset to X[i].min and the value of delta_inc_X[i+1] 
+                     * is updated. 
+                     */
+                    if (delta_inc_X[0] > X[0].max - delta_X[0]) {
+                        delta_inc_X[0] = X[0].min;
+
+                        for (var j = 1; j < X.length; j++) {
+                            if (delta_inc_X[j - 1] == X[j - 1].min) {
+                                delta_inc_X[j] = (delta_inc_X[j] + delta_X[j]);
+                                if (delta_inc_X[j] > X[j].max - delta_X[j]) {
+                                    delta_inc_X[j] = X[j].min;
+                                }
+                            }
+                        }
+
+                    }
+
+                }
+
+                /*
+                 * Returns the expected value, that is the integral of f(X)/(b-a)
+                 */
+
+                return partialArea / aMinusbProd;
+
+            }
+
+
+            /*
+             * In this function, the Sobol percentage indices are computed by 
+             * means of several numerical integrations. Here, we use the multi 
+             * numerical integrations to find the indices, since, we need to 
+             * compute Vi = Var(E[f(X)|xi]). So we first need to compute 
+             * E[f(X|xi)] through multiple integrations, then calculate the 
+             * Variance through a single integration.
+             */
+            function performSobolAnalysis() {
+
+                try {
+
+                    //Displays one message in the screen
+                    document.getElementById("exitParag").innerHTML = "Processing...";
+
+                    //Stores the body element state for future refreshment
+                    pagestate = document.body.cloneNode(true);
+
+                    //Recovering the text from text area element txtAParameters
+                    var parameterString = document.getElementById("txtAParameters").value;
+                    /*
+                     * Splitting the text received from txtAParameters into an
+                     * array of strings
+                     */
+                    var parameters = parameterString.split("&");
+                    /* 
+                     * This variable contains the array of javascript objects that
+                     * represent the analysis parameters
+                     */
+                    var jsonFmtParameters = new Array(parameters.length);
+
+                    //converts the parameter texts (JSON format) into javascript objects
+                    for (var i = 0; i < parameters.length; i++) {
+                        jsonFmtParameters[i] = JSON.parse(parameters[i]);
+                    }
+
+                    //recovering the function of text area element txtAFunction
+                    var equationString = document.getElementById("txtAFunction").value;
+
+                    /*
+                     * This variable is used to determine the number of operations 
+                     * that the integration process will have. As this program is 
+                     * computationally complex, please use this variable wisely. 
+                     * If you increase this value you will decrease the processing 
+                     * time and decreasing the analysis precision.
+                     */
+                    var delta_base = 0.001;
+
+                    //Sobol Vi values
+                    var V = new Array(parameters.length);
+                    //The summatory of Vi
+                    var sumV = 0;
+
+                    /*
+                     * After this point, the process to obtain the percentage Sobol indices
+                     * starts.
+                     */
+                    for (var i = 0; i < parameters.length; i++) {
+
+                        /*
+                         * These variables are necessary to decrease 
+                         * calling of parseFloat() function.
+                         */
+                        var minVal = parseFloat(jsonFmtParameters[i].min);
+                        var maxVal = parseFloat(jsonFmtParameters[i].max)
+
+                        /*
+                         * This variable will be used as the base for the variances 
+                         * computation.
+                         */
+                        var delta_xi = delta_base * (maxVal - minVal);
+
+                        /*
+                         * This object contains information about xi. These 
+                         * information will be used on function 
+                         * nMinusXiAverageIntegration()
+                         */
+                        var xi = {"param": jsonFmtParameters[i].param, "value": 0.0};
+
+                        /*
+                         * This array contains the set of analyzed parameters minus 
+                         * xi.
+                         */
+                        var X = new Array(parameters.length - 1);
+
+                        /*
+                         * The code bellow will put parameters into array X
+                         */
+                        var indexJ = 0;
+                        for (var j = 0; j < parameters.length; j++) {
+
+                            if (j != i) {
+                                X[indexJ] = {"param": jsonFmtParameters[j].param,
+                                    "min": minVal, "max": maxVal};
+
+                                indexJ += 1;
+                            }
+                        }
+
+                        /*
+                         * These variables are used to compute the variance
+                         * E[E[f(X)|xi]^2]-E[E[f(X)|xi]]^2
+                         */
+                        //E[E[f(X)|xi]^2]
+                        var areaMomento = 0.0;
+                        //E[E[f(X)|xi]]^2
+                        var areaSquare = 0.0;
+
+                        /*
+                         * In this code, the variances are computed. Here, we set 
+                         * values to xi inside the range minVal and maxVal, then, 
+                         * to each individual value of xi we compute E[f(X)|xi].
+                         */
+                        for (var j = minVal; j < maxVal; j += delta_xi) {
+                            /*
+                             * To decrease the complexity of integrations, we decide 
+                             * To use the rectangular method of integration.
+                             */
+                            xi.value = j + delta_xi / 2.0;
+                            var partialInteg = nMinusXiAverageIntegration(equationString, xi, X, delta_base);
+
+                            /*
+                             * If you want to use the trapezoidal integration, just 
+                             * uncomment the code below and comment on the code 
+                             * above. Be aware that in this point, the trapezoidal 
+                             * method will increase the overal complexity of the solution.
+                             */
+                            /*
+                             xi.value = j;
+                             var partialInteg = (nMinusXiAverageIntegration(equationString, 
+                             xi, X, delta_base) + nMinusXiAverageIntegration(equationString, 
+                             xi + delta_xi, X, delta_base))/2;
+                             */
+
+                            //Compute the integral of E[f(X)|xi]^2
+                            areaMomento += delta_xi * Math.pow(partialInteg, 2);
+                            //Compute the integral of E[f(X)|xi]
+                            areaSquare += delta_xi * partialInteg;
+
+                        }
+
+
+                        //Finally, the variances are computed. E[E[f(X)|xi]^2]-E[E[f(X)|xi]]^2
+                        V[i] = areaMomento / (maxVal - minVal) -
+                                Math.pow(areaSquare / (maxVal - minVal), 2);
+
+                        sumV += V[i];
+
+                    }
+
+                    /*
+                     * From this point, we have the individual variances of the 
+                     * parameters for the given equation. Now, we present the 
+                     * results into a simple table.
+                     */
+
+                    //Clear screen
+                    document.body.innerHTML = "";
+
+                    //Creating a header of the result screen
+                    var resultHead = document.createElement("h1");
+                    resultHead.innerHTML = "Sobol Sensitivity Result of Equation: " + equationString;
+
+                    document.body.appendChild(resultHead);
+
+                    /*
+                     * Creating the backlink on the result screen
+                     */
+                    var refreshLink = document.createElement("a");
+                    document.body.appendChild(refreshLink);
+                    refreshLink.setAttribute("href", "#");
+                    refreshLink.appendChild(document.createTextNode("return"));
+                    /*
+                     * Adding a click event that refreshes the body element to its 
+                     * previous state
+                     */
+                    refreshLink.addEventListener("click", function () {
+
+                        /*
+                         * This code refreshes the body element to its previous 
+                         * state
+                         */
+                        document.body = pagestate;
+                        document.getElementById("txtAParameters").value = parameterString;
+                        document.getElementById("txtAFunction").value = equationString;
+                        document.getElementById("exitParag").innerHTML = "";
+
+                    });
+
+                    document.body.appendChild(document.createElement("br"));
+
+                    /*
+                     * This code creates the result table. The th elements are 
+                     * used for headers and the td for the individual results 
+                     * presentation.
+                     */
+                    var table = document.createElement("table");
+
+                    var thParameterName = document.createElement("th");
+                    thParameterName.innerHTML = "Parameter Name";
+
+                    var thVariance = document.createElement("th");
+                    thVariance.innerHTML = "Variance";
+
+                    var thParamenterInfluence = document.createElement("th");
+                    thParamenterInfluence.innerHTML = "Sobol Indices";
+
+                    table.appendChild(thParameterName);
+                    table.appendChild(thVariance);
+                    table.appendChild(thParamenterInfluence);
+
+                    for (var i = 0; i < parameters.length; i++) {
+                        var tr = document.createElement("tr");
+
+                        var tdName = document.createElement("td");
+                        tdName.innerHTML = jsonFmtParameters[i].param;
+
+                        var tdVariance = document.createElement("td");
+                        tdVariance.innerHTML = V[i];
+
+                        var tdInfluence = document.createElement("td");
+                        /*
+                         * Here is calculated the percentage of contribution of 
+                         * each individual parameter. The code 
+                         * parseFloat().toFixed(2) is used to delimit the number 
+                         * of digits after the comma.
+                         */
+                        tdInfluence.innerHTML = parseFloat((V[i] / sumV) * 100).toFixed(2) + "%";
+
+                        tr.appendChild(tdName);
+                        tr.appendChild(tdVariance);
+                        tr.appendChild(tdInfluence);
+
+                        table.appendChild(tr);
+
+                    }
+
+                    document.body.appendChild(table);
+
+                    var paragraph = document.createElement("p");
+                    paragraph.innerHTML = "<small>This program has been developed by Dr. Eduardo M. Vasconcelos, Associate Professor on Federal Institute of Pernambuco, Brazil. <br/>Please, mail-me for any question\n\
+                        in eduardo.vasconcelos@recife.ifpe.edu.br</small>";
+
+                    document.body.appendChild(paragraph);
+
+                } catch (e) {
+                    //this code shows any problem on the program.
+                    document.getElementById("exitParag").innerHTML = "Something went wrong!<br/>" + e.message;
+                }
+
+            }//end function performSobolAnalysis
+        </script>
+
+    </head>
+    <body>
+
+        <h1>Numerical Sobol Indices Sensitivity Analysis</h1>
+
+        <p>Parameters:</p>
+        <p><small>Use the following object structure to define your parameter: {"param":"x","min":"1","max":"10"}&{"param":"y","min":"1","max":"10"}
+                <br/>In this case, we consider the parameters x and y. Use the symbol "&" to separate your parameters</small>
+        </p>
+        <p><textarea id="txtAParameters" rows="5" cols="200"></textarea></p>
+
+        <p>Function:</p>
+        <p><small>Define your equation using the math structure of javascript. For example: Math.sin(x)+Math.cos(y)
+                <br/>Make sure that all variables used on your equation are correctly configured on the text area above.   
+            </small></p>
+        <p><textarea id="txtAFunction" rows="10" cols="200"></textarea></p>
+
+        <p><small style="color:red">WARNING: This program has been developed for local use and with the study purpose. 
+                DO NOT AVAIL THIS CODE ONLINE IN YOUR WEBSITE. This code uses the "eval()" function that can be nocive. 
+                WE DO NOT TAKE RESPONSIBILITY FOR THE BAD USE OF THIS CODE.</small></p>
+
+        <p><button onclick="performSobolAnalysis()">Perform Analysis</button></p>
+        <p id="exitParag"></p>
+        
+        <center>
+        <p><small>
+                
+                AVaN Pack 1.0<br/>
+                
+                Copyright &#9400 2019 Eduardo M. Vasconcelos<br/>
+                
+                Under GNU GPL v3 license<br/>
+                
+           </small></p>
+        </center>
+
+    </body>
+</html>

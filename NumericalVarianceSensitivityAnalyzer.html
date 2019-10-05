@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<!--
+    This file is part of AVaN Pack.
+
+    AVaN Pack is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    AVaN Pack is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with AVaN Pack.  If not, see <https://www.gnu.org/licenses/>6.
+-->
+
+<html>
+    <head>
+        <title>Numerical Sensitivity Variance</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            table, td, th{
+                border: 1px green solid;
+            }
+            table{
+                border-collapse: collapse;
+            }
+            th{
+                background: #ccffcc;
+            }
+            tr:nth-child(even) {
+                background: #cccccc;
+            }
+            table{
+                width: 40%;
+            }
+        </style>
+
+        <script language="javascript" type="text/javascript">
+            
+            /*
+             * This variable will be used to store the body element state for future page refreshment
+             */
+            var pagestate; 
+            
+            
+            /*
+             * This function computes the numerical integration of function f(x)
+             * with a<x<b 
+             */
+            function numericalIntegration(f, a, b) {
+
+                /*
+                 * This variable will contain the granularity of our integration.
+                 * This code allows us to have 100000 operations to solve our integration.
+                 * Note that if delta = 0.0001, the number of operations will depend
+                 * on the range of values. For example, if the range among a and b is 100000
+                 * then the number of operation will be very large, otherwise,
+                 * if the range is 0.0000001, the resultant integration will be zero.
+                 */
+                var delta = 0.00001 * (b-a);
+
+                //This variable will receive the value of integration
+                var area = 0;
+
+                //The method used is the trapezoidal rule: int{a,b} f(x) = (b-a)*(f(a)+f(b))/2
+                for (var i = a * 1.0; i < b - delta; i += delta) {
+                    area += (delta) * ((f(i) + f(i + delta)) / 2);
+
+                }
+
+                return area;
+
+            }
+
+            //This function is called when you click on button Perform Analysis. It starts the analysis process
+            //This function is also responsible for building and presenting the result table
+            function performAnalysis() {
+                try {
+                    
+                    //Displays one message in the page
+                    document.getElementById("exitParag").innerHTML = "Processing...";
+                    
+                    //Stores the body eleemnt state for future refreshment
+                    pagestate = document.body.cloneNode(true);
+
+                    //Recovering the text from text area element txtAParameters
+                    var parameterString = document.getElementById("txtAParameters").value;
+                    /*
+                     * Splitting the text received from txtAParameters into an
+                     * array of strings
+                     */
+                    var parameters = parameterString.split("&");
+                    /* 
+                     * This variable contains the array of javascript objects that
+                     * represent the parameters
+                     */
+                    var jsonFmtParameters = new Array(parameters.length);
+
+                    //Converts the parameter texts (JSON format) into javascript objects
+                    for (var i = 0; i < parameters.length; i++) {
+                        jsonFmtParameters[i] = JSON.parse(parameters[i]);
+                    }
+
+                    //Recovering the function of text area element txtAFunction
+                    var equationString = document.getElementById("txtAFunction").value;
+                    
+                    /*
+                     * This variable will contain the javascript function in 
+                     * string format. 
+                     * This string will be converted into a javascript native 
+                     * function.
+                     */
+                    var equationInJSFmt = "function equation(";
+                    
+                    //Inserting the variables into the function
+                    for(var i = 0; i < parameters.length; i++){
+                        
+                        equationInJSFmt += jsonFmtParameters[i].param;
+                        
+                        /*
+                         * If the process is in the last index, the code finishes 
+                         * the javascript function, by adding the return clause and 
+                         * the equation. Otherwise, it inserts the 
+                         * variable as a parameter of our javascript function; 
+                         * these parameters are separated by ','
+                         */
+                        if(i == jsonFmtParameters.length - 1){
+                            equationInJSFmt += "){ return " + equationString + ";}";
+                        }else{
+                            equationInJSFmt += ",";
+                        }
+                    }
+                    
+                    /*
+                     * Here we transform f(X) into f(X)^2 to calculate the 
+                     * moment. Tf the function equation is defined as 
+                     * 'function equation(x,y){return x+y;}', then the resultant 
+                     * function will be 
+                     * 'function equationMoment(x,y){ return Math.pow(x+y,2);}'
+                     */
+                    var momentEquationString = equationInJSFmt.replace("equation", "equationMoment").replace("return", "return Math.pow(").replace(";", ",2);");
+
+                    /*
+                     * This command will convert the string into a javascript 
+                     * function. We are using this command because of its 
+                     * flexibility. This function is easy to manipulate. 
+                     * But, it can be quite nocive, so, please, 
+                     * when introducing a string on txtAFunction, verify if it 
+                     * is correctly defined.
+                     */
+                    eval(equationInJSFmt);
+                    eval(momentEquationString);
+
+                    /*
+                     * Here we start the analysis by variating one parameter at 
+                     * a time. Firstly, we define a function, in string format, 
+                     * that will be passed in function 'numericalIntegration()' 
+                     * defined on top of this program. The idea here is to call 
+                     * the functions equation and equationMoment variating one 
+                     * parameter at a time. For example: Let's consider that we 
+                     * have the function 'equation(x,y,z)'. We will define a 
+                     * function such as: 
+                     * function f(_x1){return equation(_x1,5,5)}, considering 
+                     * that the fixed values of y and z are both 5.
+                     */
+
+                    /*
+                     * These variables will be used to store the transient 
+                     * functions
+                     */
+                    var _fun;
+                    var _funMoment;
+
+                    //This array will store the individual variances
+                    var variances = new Array(parameters.length);
+                    //This function will store the sum of variances to calculate the pecentages;
+                    var sumVariances = 0;
+
+                    /*
+                     * This loop is used to build the transient functions for 
+                     * the analysis of one parameter at a time. 
+                     */
+                    for (var i = 0; i < parameters.length; i++) {
+
+                        /*
+                         * Removing old references to the transient variables. 
+                         * Theoretically, the garbage collector will erase 
+                         * these functions.
+                         */
+                        _fun = undefined;
+                        _funMoment = undefined;
+
+                        //The transient function for the equation.
+                        var transientFunctionEqString = "_fun = function(_param){return equation(";
+                        //The transient function for the momentEquation
+                        var transientFunctionMoString = "";
+
+                        /*
+                         * Scrolling through parameter array to add the fixed value as
+                         * parameters of function 'equation'.
+                         */
+                        for (var j = 0; j < parameters.length; j++) {
+                            if (j == i) {
+                                /*
+                                 * If 'j' is equal  'i', then, pass to function 
+                                 * 'equation' the parameter _param. Ex.: if i=1 
+                                 * and we have 3 parameters, we will have 
+                                 * _fun(_param){ return equation(0.5,_param,0.5) 
+                                 * Note that when j is equal to 'i' this code 
+                                 * will add the variable _param to the function 
+                                 * 'equation', otherwise, it will pass the fixed 
+                                 * value of parameter 'j'.
+                                 */
+                                transientFunctionEqString += " _param";
+                            } else {
+                                /* 
+                                 * If j is not the analyzed parameter, then, pass 
+                                 * the fixed value of parameter j
+                                 */
+                                transientFunctionEqString += jsonFmtParameters[j].fixed + "";
+                            }
+
+                            if (j != parameters.length - 1) {
+                                /*
+                                 * Insert the ',' character between parameters 
+                                 * if 'j' is not the last parameter.
+                                 */
+                                transientFunctionEqString += ",";
+
+                            } else {
+                                /*
+                                 * If 'j' is the last parameter, then close the 
+                                 * function
+                                 */
+                                transientFunctionEqString += ");}";
+                            }
+                        }//end for(var j = 0;j<jParameters.length;j++){
+
+                        //Creating the moment function
+                        transientFunctionMoString = transientFunctionEqString.replace("equation", "equationMoment").replace("_fun", "_funMoment");
+
+                        eval(transientFunctionEqString);
+                        eval(transientFunctionMoString);
+
+                        /*
+                         * Calculates the esperance of function f(x) with the 
+                         * following equation: E[f(x)] = (integral f(x))/(b-a) 
+                         * for the range a and b 
+                         */
+                        var transientSquareEsperance = numericalIntegration(_fun, jsonFmtParameters[i].min, jsonFmtParameters[i].max) / (jsonFmtParameters[i].max - jsonFmtParameters[i].min);
+                        //Obtaining E[X]^2
+                        transientSquareEsperance = Math.pow(transientSquareEsperance, 2);
+                        //Obtaining E[X^2]
+                        var transientMoment = numericalIntegration(_funMoment, jsonFmtParameters[i].min, jsonFmtParameters[i].max) / (jsonFmtParameters[i].max - jsonFmtParameters[i].min);
+
+                        //Obtaining Var[f(x)]=E[f(x)^2]-E[f(x)]^2
+                        variances[i] = transientMoment - transientSquareEsperance;
+                        sumVariances += variances[i];
+
+                    }//end for(var i = 0;i<parameters.length;i++)
+                    /*
+                     * From this point, we have the individual variances of the 
+                     * parameters for the passed function. Now, we present the 
+                     * results into a simple html table
+                     */
+
+                    //Clearing the screen
+                    document.body.innerHTML = "";
+
+                    //Creating a header for the result screen
+                    var resultHead = document.createElement("h1");
+                    resultHead.innerHTML = "Sensitivity Result of Equation: "+equationString;
+
+                    document.body.appendChild(resultHead);
+                    
+                    /*
+                     * Creating the "return" link on the result screen
+                     */
+                    var refreshLink = document.createElement("a");
+                    document.body.appendChild(refreshLink);
+                    refreshLink.setAttribute("href", "#");
+                    refreshLink.appendChild(document.createTextNode("return"));
+                    /*
+                     * Adding a click event that refreshes the body to its 
+                     * previous state
+                     */
+                    refreshLink.addEventListener("click", function () {
+                        
+                        /*
+                         * This code refreshes the body element to its previous 
+                         * state
+                         */
+                        document.body = pagestate;
+                        document.getElementById("txtAParameters").value = parameterString;
+                        document.getElementById("txtAFunction").value = equationString;
+                        document.getElementById("exitParag").innerHTML = "";
+
+                    });
+
+                    document.body.appendChild(document.createElement("br"));
+                    
+                    /*
+                     * This code creates the result table. The th elements are 
+                     * used for headers and the td for the individual results 
+                     * presentation.
+                     */
+                    var table = document.createElement("table");
+
+                    var thParameterName = document.createElement("th");
+                    thParameterName.innerHTML = "Parameter Name";
+                    
+                    var thVariance = document.createElement("th");
+                    thVariance.innerHTML = "Variance";
+
+                    var thParamenterInfluence = document.createElement("th");
+                    thParamenterInfluence.innerHTML = "Sensitivity Result";
+
+                    table.appendChild(thParameterName);
+                    table.appendChild(thVariance);
+                    table.appendChild(thParamenterInfluence);
+
+                    for (var i = 0; i < parameters.length ; i++) {
+                        var tr = document.createElement("tr");
+
+                        var tdName = document.createElement("td");
+                        tdName.innerHTML = jsonFmtParameters[i].param;
+                        
+                        var tdVariance = document.createElement("td");
+                        tdVariance.innerHTML = variances[i];
+
+                        var tdInfluence = document.createElement("td");
+                        /*
+                         * Here is calculated the percentage of contribution of 
+                         * each individual parameter. The code 
+                         * parseFloat().toFixed(2) is used to delimit the number 
+                         * of digits after the comma.
+                         */
+                        tdInfluence.innerHTML = parseFloat((variances[i] / sumVariances) * 100).toFixed(2) + "%";
+
+                        tr.appendChild(tdName);
+                        tr.appendChild(tdVariance);
+                        tr.appendChild(tdInfluence);
+
+                        table.appendChild(tr);
+
+                    }
+
+                    document.body.appendChild(table);
+                    
+                    var paragraph = document.createElement("p");
+                    paragraph.innerHTML = "<small>This program has been developed by Dr. Eduardo M. Vasconcelos, Associate Professor on Federal Institute of Pernambuco, Brazil. <br/>Please, mail-me for any question\n\
+                        in eduardo.vasconcelos@recife.ifpe.edu.br</small>";
+            
+                    document.body.appendChild(paragraph);
+                    
+                } catch (e) {
+                    //this code shows any problem on the program.
+                    document.getElementById("exitParag").innerHTML = "Something went wrong!<br/>"+e.message;
+                    
+                }
+
+            }//end function performAnalysis
+        </script>
+
+    </head>
+    <body>
+        
+        <h1>Numerical One at a Time Variance Sensitivity Analysis</h1>
+        
+        <p>Parameters:</p>
+        <p><small>Use the following object structure to define your parameter: {"param":"x","min":"1","max":"10","fixed":"5"}&{"param":"y","min":"1","max":"10","fixed":"5"}
+               <br/>In this case, we consider the parameters x and y. Use the symbol "&" to separate your parameters</small>
+        </p>
+        <p><textarea id="txtAParameters" rows="5" cols="200"></textarea></p>
+        
+        <p>Function:</p>
+        <p><small>Define your equation using the math structure of javascript. For example: Math.sin(x)+Math.cos(y)
+        <br/>Make sure that all variables used on your equation are correctly configured on the text area above.   
+        </small></p>
+        <p><textarea id="txtAFunction" rows="10" cols="200"></textarea></p>
+        
+        <p><small style="color:red">WARNING: This program has been developed for local use and with the study purpose. 
+                DO NOT AVAIL THIS CODE ONLINE IN YOUR WEBSITE. This code uses the "eval()" function which can be nocive. 
+                WE DO NOT TAKE RESPONSIBILITY FOR THE BAD USE OF THIS CODE.</small></p>
+            
+                <p><button onclick="performAnalysis()">Perform Analysis</button></p>
+        <p id="exitParag"></p>
+        
+        <center>
+            <p><small>
+                
+                AVaN Pack 1.0<br/>
+                
+                Copyright &#9400 2019 Eduardo M. Vasconcelos<br/>
+                
+                Under GNU GPL v3 license<br/>
+                
+           </small></p>
+        </center>
+        
+    </body>
+</html>
